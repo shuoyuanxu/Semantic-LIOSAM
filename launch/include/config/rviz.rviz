@@ -7,9 +7,12 @@ Panels:
         - /Global Options1
         - /links1/map1
         - /links1/base_link1
+        - /Odometry1
+        - /Odometry1/Odom GPS1
+        - /Odometry1/Odom GPS1/Shape1
         - /Mapping1
         - /Mapping1/Path (global)1
-      Splitter Ratio: 0.5635491609573364
+      Splitter Ratio: 0.5803357362747192
     Tree Height: 674
   - Class: rviz/Selection
     Name: Selection
@@ -87,7 +90,7 @@ Visualization Manager:
               Scale: 1
               Value: true
             Value: false
-          Enabled: true
+          Enabled: false
           Keep: 300
           Name: Odom IMU
           Position Tolerance: 0.10000000149011612
@@ -104,7 +107,7 @@ Visualization Manager:
             Value: Axes
           Topic: /odometry/imu
           Unreliable: false
-          Value: true
+          Value: false
         - Angle Tolerance: 0.10000000149011612
           Class: rviz/Odometry
           Covariance:
@@ -130,7 +133,7 @@ Visualization Manager:
           Shape:
             Alpha: 1
             Axes Length: 1
-            Axes Radius: 0.30000001192092896
+            Axes Radius: 0.019999999552965164
             Color: 255; 25; 0
             Head Length: 0.30000001192092896
             Head Radius: 0.10000000149011612
@@ -175,7 +178,7 @@ Visualization Manager:
           Topic: /lio_sam/mapping/odometry
           Unreliable: false
           Value: false
-      Enabled: false
+      Enabled: true
       Name: Odometry
     - Class: rviz/Group
       Displays:
@@ -468,8 +471,7 @@ Visualization Manager:
           Marker Topic: /lio_sam/mapping/loop_closure_constraints
           Name: Loop constraint
           Namespaces:
-            loop_edges: true
-            loop_nodes: true
+            {}
           Queue Size: 100
           Value: true
       Enabled: true
@@ -478,7 +480,7 @@ Visualization Manager:
   Global Options:
     Background Color: 0; 0; 0
     Default Light: true
-    Fixed Frame: lio/map
+    Fixed Frame: map
     Frame Rate: 30
   Name: root
   Tools:
@@ -490,7 +492,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 90.87306213378906
+      Distance: 85.28723907470703
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -498,17 +500,17 @@ Visualization Manager:
         Value: false
       Field of View: 0.7853981852531433
       Focal Point:
-        X: -33.068599700927734
-        Y: -19.4272403717041
-        Z: -26.498537063598633
+        X: -27.216075897216797
+        Y: -15.002653121948242
+        Z: -34.620269775390625
       Focal Shape Fixed Size: false
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 1.5697963237762451
+      Pitch: 0.8947970867156982
       Target Frame: base_link
-      Yaw: 2.0198159217834473
+      Yaw: 0.2898298501968384
     Saved: ~
 Window Geometry:
   Displays:
@@ -525,4 +527,4 @@ Window Geometry:
     collapsed: false
   Width: 1920
   X: 1304
-  Y: 39
+  Y: 27
