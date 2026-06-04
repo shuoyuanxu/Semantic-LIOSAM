@@ -20,7 +20,7 @@
 using namespace gtsam;
 
 using symbol_shorthand::X; // Pose3 (x,y,z,r,p,y)
-using symbol_shorthand::V; // Vel   (xdot,ydot,zdot)
+using symbol_shorthand::V; // Vel   (xdot,ydot,zdot) 
 using symbol_shorthand::B; // Bias  (ax,ay,az,gx,gy,gz)
 using symbol_shorthand::G; // GPS pose
 
@@ -45,29 +45,6 @@ POINT_CLOUD_REGISTER_POINT_STRUCT (PointXYZIRPYT,
                                    (double, time, time))
 
 typedef PointXYZIRPYT  PointTypePose;
-
-struct PointXYZRGBIntensity {
-    PCL_ADD_POINT4D;
-    float intensity;
-    std::uint32_t t;
-    std::uint16_t reflectivity;
-    std::uint16_t ambient;
-    std::uint32_t rgb;
-    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-} EIGEN_ALIGN16;
-
-POINT_CLOUD_REGISTER_POINT_STRUCT(PointXYZRGBIntensity,
-    (float, x, x)
-    (float, y, y)
-    (float, z, z)
-    (float, intensity, intensity)
-    (std::uint32_t, t, t)
-    (std::uint16_t, reflectivity, reflectivity)
-    (std::uint16_t, ring, ring)
-    (std::uint16_t, ambient, ambient)
-    (std::uint32_t, range, range)
-    (std::uint32_t, rgb, rgb)
-)
 
 class mapOptimization : public ParamServer
 {
@@ -108,6 +85,8 @@ public:
 
     vector<pcl::PointCloud<PointType>::Ptr> cornerCloudKeyFrames;
     vector<pcl::PointCloud<PointType>::Ptr> surfCloudKeyFrames;
+
+    string kfSaveDir; // directory where per-keyframe PCDs are written incrementally
     
     pcl::PointCloud<PointType>::Ptr cloudKeyPoses3D;
     pcl::PointCloud<PointTypePose>::Ptr cloudKeyPoses6D;
@@ -211,6 +190,10 @@ public:
         downSizeFilterSurroundingKeyPoses.setLeafSize(surroundingKeyframeDensity, surroundingKeyframeDensity, surroundingKeyframeDensity); // for surrounding key poses of scan-to-map optimization
 
         allocateMemory();
+
+        kfSaveDir = std::string(std::getenv("HOME")) + savePCDDirectory + "keyframes/";
+        int unused_kf = system((std::string("mkdir -p ") + kfSaveDir).c_str());
+        (void)unused_kf;
     }
 
     void allocateMemory()
@@ -383,9 +366,28 @@ public:
       if(req.destination.empty()) saveMapDirectory = std::getenv("HOME") + savePCDDirectory;
       else saveMapDirectory = std::getenv("HOME") + req.destination;
       cout << "Save destination: " << saveMapDirectory << endl;
-      // create directory and remove old files;
-      int unused = system((std::string("exec rm -r ") + saveMapDirectory).c_str());
-      unused = system((std::string("mkdir -p ") + saveMapDirectory).c_str());
+      // remove only files in saveMapDirectory, preserving subdirectories (e.g. keyframes/)
+      int unused = system(("find " + saveMapDirectory + " -maxdepth 1 -type f -delete 2>/dev/null; mkdir -p " + saveMapDirectory + "; mkdir -p " + kfSaveDir).c_str());
+
+      // write poses.csv first — it's fast and must survive any subsequent timeout
+      std::ofstream posesFile(kfSaveDir + "poses.csv");
+      posesFile << "id,x,y,z,qx,qy,qz,qw,timestamp\n";
+      for (int i = 0; i < (int)cloudKeyPoses6D->size(); i++)
+      {
+          const auto& p = cloudKeyPoses6D->points[i];
+          Eigen::AngleAxisd roll_aa (p.roll,  Eigen::Vector3d::UnitX());
+          Eigen::AngleAxisd pitch_aa(p.pitch, Eigen::Vector3d::UnitY());
+          Eigen::AngleAxisd yaw_aa  (p.yaw,   Eigen::Vector3d::UnitZ());
+          Eigen::Quaterniond q = yaw_aa * pitch_aa * roll_aa;
+          posesFile << std::fixed << std::setprecision(6)
+                    << i << ","
+                    << p.x << "," << p.y << "," << p.z << ","
+                    << q.x() << "," << q.y() << "," << q.z() << "," << q.w() << ","
+                    << p.time << "\n";
+      }
+      posesFile.close();
+      cout << "Keyframe poses saved to " << kfSaveDir << "poses.csv (" << cloudKeyPoses6D->size() << " poses)" << endl;
+
       // save key frame transformations
       pcl::io::savePCDFileBinary(saveMapDirectory + "/trajectory.pcd", *cloudKeyPoses3D);
       pcl::io::savePCDFileBinary(saveMapDirectory + "/transformations.pcd", *cloudKeyPoses6D);
@@ -510,17 +512,6 @@ public:
         downSizeFilterGlobalMapKeyFrames.filter(*globalMapKeyFramesDS);
         publishCloud(pubLaserCloudSurround, globalMapKeyFramesDS, timeLaserInfoStamp, odometryFrame);
     }
-
-
-
-
-
-
-
-
-
-
-
 
     void loopClosureThread()
     {
@@ -1587,6 +1578,20 @@ public:
         // save key frame cloud
         cornerCloudKeyFrames.push_back(thisCornerKeyFrame);
         surfCloudKeyFrames.push_back(thisSurfKeyFrame);
+
+        // save full deskewed scan to disk immediately (avoids batch-save timeout at shutdown)
+        if (!kfSaveDir.empty())
+        {
+            // ensure dir exists (guard against first-run race)
+            if ((int)cloudKeyPoses3D->size() == 1)
+                system(("mkdir -p " + kfSaveDir).c_str());
+            pcl::PointCloud<PointType>::Ptr thisRawKeyFrame(new pcl::PointCloud<PointType>());
+            pcl::fromROSMsg(cloudInfo.cloud_deskewed, *thisRawKeyFrame);
+            char kfFilename[128];
+            snprintf(kfFilename, sizeof(kfFilename), "%skf_%05d.pcd",
+                     kfSaveDir.c_str(), (int)cloudKeyPoses3D->size() - 1);
+            pcl::io::savePCDFileBinary(kfFilename, *thisRawKeyFrame);
+        }
 
         // save path for visualization
         updatePath(thisPose6D);

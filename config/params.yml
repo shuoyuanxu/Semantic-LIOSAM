@@ -1,19 +1,19 @@
 lio_sam:
 
   # Topics
-  pointCloudTopic: "/colorised_points"               # Point cloud data
+  pointCloudTopic: "/ouster/points"               # Point cloud data
   imuTopic: "ms/imu/data"                         # IMU data
   odomTopic: "odometry/imu"                   # IMU pre-preintegration odometry, same frequency as IMU
   gpsTopic: "odometry/gps"                   # GPS odometry topic from navsat, see module_navsat.launch file
 
   # Frames
-  lidarFrame: "lio/base_link"
-  baselinkFrame: "lio/base_link"
-  odometryFrame: "lio/odom"
-  mapFrame: "lio/map"
+  lidarFrame: "os_sensor"
+  baselinkFrame: "robot_base_link"
+  odometryFrame: "odom"
+  mapFrame: "map"
 
   # GPS Settings
-  useImuHeadingInitialization: true           # if using GPS data, set to "true"
+  useImuHeadingInitialization: false           # if using GPS data, set to "true"
   useGpsElevation: false                      # if GPS elevation is bad, set to "false"
   gpsCovThreshold: 2.0                        # m^2, threshold for using GPS data
   poseCovThreshold: 25.0                      # m^2, threshold for using GPS data
@@ -25,9 +25,9 @@ lio_sam:
   # Sensor Settings
   sensor: ouster                            # lidar sensor type, 'velodyne' or 'ouster' or 'livox'
   N_SCAN: 64                                  # number of lidar channel (i.e., Velodyne/Ouster: 16, 32, 64, 128, Livox Horizon: 6)
-  Horizon_SCAN: 512                          # lidar horizontal resolution (Velodyne:1800, Ouster:512,1024,2048, Livox Horizon: 4000)
+  Horizon_SCAN: 1024                          # lidar horizontal resolution (Velodyne:1800, Ouster:512,1024,2048, Livox Horizon: 4000)
   downsampleRate: 1                          # default: 1. Downsample your data if too many points. i.e., 16 = 64 / 4, 16 = 16 / 1
-  lidarMinRange: 0.3                          # default: 1.0, minimum lidar range to be used
+  lidarMinRange: 1                         # default: 1.0, minimum lidar range to be used
   lidarMaxRange: 1000                      # default: 1000.0, maximum lidar range to be used
 
   # IMU Settings
@@ -38,20 +38,39 @@ lio_sam:
   imuGravity: 9.80511
   imuRPYWeight: 0.05
 
+  #imuAccNoise: 0.001093618
+  #imuGyrNoise: 0.00060369579 
+  #imuAccBiasN: 4.584471e-05 
+  #imuGyrBiasN: 3.22094e-06
+  #imuGravity: 9.80511
+  #imuRPYWeight: 0.05
+
+
   # Extrinsics: T_lb (lidar -> imu)
-  extrinsicTrans: [0.0, 0.0, 0.0]
+  # extrinsicTrans: [0.0, 0.0, 0.0]
+  extrinsicTrans: [ -0.0227289543, 0.0404418895, -0.0259327545 ]
+
   # extrinsicRot: [-1, 0, 0,
   #                0, 1, 0,
   #                 0, 0, -1]
   # extrinsicRPY: [0, -1, 0,
   #                1, 0, 0,
   #                0, 0, 1]
-  extrinsicRot: [1, 0, 0,
-                 0, 1, 0,
-                 0, 0, 1]
+  # extrinsicRot: [1, 0, 0,
+  #                0, 1, 0,
+  #                0, 0, 1]
+  # extrinsicRPY: [1, 0, 0,
+  #                0, 1, 0,
+  #                0, 0, 1]
+  extrinsicRot: [0.9998459674,  0.0155436449, -0.0081508592,
+                -0.0157202487,  0.9996328268, -0.0220700073,
+                0.007804818,   0.0221947415,  0.9997232008]
+
   extrinsicRPY: [1, 0, 0,
                  0, 1, 0,
                  0, 0, 1]
+
+
 
   # LOAM feature threshold
   edgeThreshold: 1.0
@@ -79,7 +98,7 @@ lio_sam:
   surroundingKeyframeSearchRadius: 50.0         # meters, within n meters scan-to-map optimization (when loop closure disabled)
 
   # Loop closure
-  loopClosureEnableFlag: true
+  loopClosureEnableFlag: false
   loopClosureFrequency: 2                    # Hz, regulate loop closure constraint add frequency
   surroundingKeyframeSize: 50                   # submap size (when loop closure enabled)
   historyKeyframeSearchRadius: 15.0             # meters, key frame that is within n meters from current pose will be considerd for loop closure
@@ -155,7 +174,7 @@ ekf_gps:
                                0,    0,    0,    0,    0,    0,    0,     0,     0.04,  0,    0,    0,    0,    0,      0,
                                0,    0,    0,    0,    0,    0,    0,     0,     0,     0.01, 0,    0,    0,    0,      0,
                                0,    0,    0,    0,    0,    0,    0,     0,     0,     0,    0.01, 0,    0,    0,      0,
-                               0,    0,    0,    0,    0,    0,    0,     0,     0,     0,    0,    0.5,  0,    0,      0,
+                               0,    0,    0,    0,    0,    0,    0,     i 0,     0,    0,    0.5,  0,    0,      0,
                                0,    0,    0,    0,    0,    0,    0,     0,     0,     0,    0,    0,    0.01, 0,      0,
                                0,    0,    0,    0,    0,    0,    0,     0,     0,     0,    0,    0,    0,    0.01,   0,
                                0,    0,    0,    0,    0,    0,    0,     0,     0,     0,    0,    0,    0,    0,      0.015]
