@@ -1,5 +1,7 @@
 # Semantic LIO-SAM — forestry semantic mapping
-<img width="1760" height="1540" alt="image" src="https://github.com/user-attachments/assets/aa007832-f5da-4c12-a640-04b2523cca3b" />
+<img width="1600" height="1248" alt="raw_vs_semantic" src="https://github.com/user-attachments/assets/fe6d7fab-84dc-4aff-8b8e-abd370ce984e" />
+<img width="640" height="360" alt="semantic_map_buildup" src="https://github.com/user-attachments/assets/6f3f028a-fc16-4e2f-af3f-9f25686c8e52" />
+<img width="640" height="360" alt="semantic_flythrough" src="https://github.com/user-attachments/assets/abe0c676-fdb4-4558-a684-036b22e9d8ef" />
 
 LiDAR-inertial SLAM with an integrated semantic segmentation pipeline that
 produces class-labeled 3D maps of orchard environments
@@ -88,7 +90,7 @@ If you change classes or features, update `semantic/include/config.py`
 (`num_classes`, `LABEL_TO_NAME`, `LABEL_TO_COLOR`) — the checkpoint and
 config must agree.
 
-## Based on LIO-SAM
+## Core Dependencies
 
 This repository is built on **[LIO-SAM](https://github.com/TixiaoShan/LIO-SAM)**
 by Tixiao Shan et al., which provides the underlying tightly-coupled
