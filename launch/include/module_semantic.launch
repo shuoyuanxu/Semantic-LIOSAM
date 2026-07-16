@@ -1,55 +1,27 @@
 <launch>
     <!--
-      Keyframe-rate semantic segmentation (RandLA-Net), running alongside LIO-SAM.
+      Keyframe-rate semantic segmentation (RandLA-Net) + automatic semantic
+      map generation, running alongside LIO-SAM (never in its critical path).
 
-      Never in LIO-SAM's critical path: it subscribes to the raw Ouster cloud,
-      keeps only the newest scan (drop-old, no backlog), segments it, publishes a
-      labeled cloud for RViz, and saves each labeled frame to disk so
-      semantic/scripts/stitch_semantic_map.py can compose the final semantic map
-      offline using the loop-closure-corrected poses.
+      ALL tuning knobs live in the `semantic:` section of config/params.yaml
+      (topics, scan rate, robot-reflection radius, map voxel sizes, ground
+      downsampling, noise removal, live-map refresh, ...). Private rosparams
+      on the nodes still override the yaml if you need a one-off change.
 
       Classes: 0 trunk, 1 crown, 2 ground, 3 others.
-      View it in RViz under the "Semantic" group:
-        - "Semantic labels ..."  live per-scan
-        - "Semantic map ..."     accumulating (Decay 300 s) — enable to build the map
-
-      The node needs PyTorch; run it in an env that has torch + rospy.
+      Outputs go to <savePCDDirectory>/semantic/ (default ~/Downloads/LOAM/),
+      overwritten on every new run like the rest of the LIO-SAM output.
     -->
 
-    <arg name="input_topic"  default="/ouster/points"/>
-    <arg name="output_topic" default="/semantic/labeled_cloud"/>
-    <arg name="checkpoint"   default="$(find lio_sam)/semantic/model/checkpoint.tar"/>
-    <!-- seconds between processed scans; segmentation is far slower than the
-         10 Hz sensor, so we deliberately subsample rather than queue up -->
-    <arg name="min_interval" default="0.5"/>
-    <!-- crop to the region the model was trained on (see config.TRAIN_CROP) -->
-    <arg name="use_crop"     default="true"/>
-    <arg name="device"       default=""/>
-    <!-- automatic map generation when the run ends (bag finished / Ctrl-C) -->
-    <arg name="auto_stitch"  default="true"/>
-    <arg name="stitch_voxel" default="0.10"/>
-    <arg name="idle_timeout" default="15.0"/>
+    <arg name="checkpoint" default="$(find lio_sam)/semantic/model/checkpoint.tar"/>
 
-    <!-- labeled frames / stitched map live under <savePCDDirectory>/semantic/
-         (default ~/Downloads/LOAM/semantic/), overwritten on every new run
-         just like the rest of the LIO-SAM output -->
     <node pkg="lio_sam" type="segmentation_node.py" name="semantic_segmentation"
           output="screen" respawn="false">
-        <param name="input_topic"  value="$(arg input_topic)"/>
-        <param name="output_topic" value="$(arg output_topic)"/>
-        <param name="checkpoint"   value="$(arg checkpoint)"/>
-        <param name="min_interval" value="$(arg min_interval)"/>
-        <param name="use_crop"     value="$(arg use_crop)"/>
-        <param name="device"       value="$(arg device)"/>
+        <param name="checkpoint" value="$(arg checkpoint)"/>
     </node>
 
-    <!-- when the lidar goes quiet the run is over: stitch labeled frames with
-         the (continuously updated) keyframes/poses.csv into the semantic map -->
+    <!-- live clean map on /semantic/map + final map when the lidar goes quiet -->
     <node pkg="lio_sam" type="semantic_map_finisher.py" name="semantic_map_finisher"
-          output="screen" respawn="false" if="$(arg auto_stitch)">
-        <param name="input_topic"  value="$(arg input_topic)"/>
-        <param name="voxel"        value="$(arg stitch_voxel)"/>
-        <param name="idle_timeout" value="$(arg idle_timeout)"/>
-    </node>
+          output="screen" respawn="false"/>
 
 </launch>

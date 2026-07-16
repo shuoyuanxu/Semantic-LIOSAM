@@ -25,8 +25,13 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SEMANTIC_DIR = os.path.dirname(BASE_DIR)
 sys.path.insert(0, os.path.join(SEMANTIC_DIR, 'include'))
 
-from config import TRAIN_CROP, LABEL_TO_NAME
+from config import TRAIN_CROP, LABEL_TO_NAME, LABEL_TO_COLOR
 from inference import SegmentationEngine
+
+# packed 0x00RRGGBB per class, for rviz RGB8 coloring
+_PALETTE = np.array([(LABEL_TO_COLOR[i][0] << 16) | (LABEL_TO_COLOR[i][1] << 8)
+                     | LABEL_TO_COLOR[i][2] for i in range(len(LABEL_TO_COLOR))],
+                    dtype=np.uint32)
 
 # PointField datatype -> numpy dtype
 _PF_DTYPE = {1: 'i1', 2: 'u1', 3: 'i2', 4: 'u2', 5: 'i4', 6: 'u4', 7: 'f4', 8: 'f8'}
@@ -51,25 +56,33 @@ def cloud_to_arrays(msg, wanted_fields):
     return {name: np.array(raw[name]) for name in wanted_fields}
 
 
+def param(name, default):
+    """Config lookup: private ~name overrides the `semantic:` section of
+    config/params.yml, which overrides the built-in default."""
+    return rospy.get_param('~' + name, rospy.get_param('semantic/' + name, default))
+
+
 class SegmentationNode:
     def __init__(self):
         rospy.init_node('semantic_segmentation')
 
-        input_topic = rospy.get_param('~input_topic', '/ouster/points')
-        output_topic = rospy.get_param('~output_topic', '/semantic/labeled_cloud')
-        checkpoint = rospy.get_param('~checkpoint',
-                                     os.path.join(SEMANTIC_DIR, 'model', 'checkpoint.tar'))
-        device = rospy.get_param('~device', '') or None
+        input_topic = param('input_topic', '/ouster/points')
+        output_topic = param('output_topic', '/semantic/labeled_cloud')
+        checkpoint = param('checkpoint',
+                           os.path.join(SEMANTIC_DIR, 'model', 'checkpoint.tar'))
+        device = param('device', '') or None
         # live alongside the rest of the LIO-SAM output (default ~/Downloads/LOAM/)
         loam_dir = os.path.expanduser('~') + rospy.get_param('lio_sam/savePCDDirectory',
                                                              '/Downloads/LOAM/')
-        self.save_dir = rospy.get_param('~save_dir',
-                                        os.path.join(loam_dir, 'semantic', 'labeled_frames'))
-        self.min_interval = rospy.get_param('~min_interval', 0.5)  # s between scans
-        self.use_crop = rospy.get_param('~use_crop', True)
-        self.crop = {k: rospy.get_param('~crop_' + k, v) for k, v in TRAIN_CROP.items()}
-        max_patches = rospy.get_param('~max_patches', 8)
-        min_coverage = rospy.get_param('~min_coverage', 0.2)
+        self.save_dir = param('save_dir',
+                              os.path.join(loam_dir, 'semantic', 'labeled_frames'))
+        self.min_interval = param('min_interval', 0.5)  # s between scans
+        self.use_crop = param('use_crop', True)
+        self.crop = {k: param('crop_' + k, v) for k, v in TRAIN_CROP.items()}
+        # drop robot self-reflections before labeling (0 disables)
+        self.robot_radius = param('robot_radius', 0.55)
+        max_patches = param('max_patches', 8)
+        min_coverage = param('min_coverage', 0.2)
 
         os.makedirs(self.save_dir, exist_ok=True)
         # fresh run overwrites the previous one, like the rest of LIO-SAM's output
@@ -88,6 +101,7 @@ class SegmentationNode:
         self.lock = threading.Lock()
         self.latest_msg = None
         self.last_processed_stamp = -1e18
+        self.last_seen_stamp = None
 
         self.pub = rospy.Publisher(output_topic, PointCloud2, queue_size=2)
         rospy.Subscriber(input_topic, PointCloud2, self.callback,
@@ -96,6 +110,19 @@ class SegmentationNode:
                       input_topic, output_topic, self.save_dir)
 
     def callback(self, msg):
+        # a backward jump in sensor time means a bag was restarted:
+        # clear the previous run's frames so maps don't mix
+        stamp = msg.header.stamp.to_sec()
+        if self.last_seen_stamp is not None and stamp < self.last_seen_stamp - 5.0:
+            stale = [f for f in os.listdir(self.save_dir) if f.startswith('frame_')]
+            for f in stale:
+                os.remove(os.path.join(self.save_dir, f))
+            self.last_processed_stamp = -1e18
+            rospy.logwarn('bag restart detected (time jumped back %.0fs) — '
+                          'cleared %d labeled frames from the previous run',
+                          self.last_seen_stamp - stamp, len(stale))
+        self.last_seen_stamp = stamp
+
         # keep only the newest scan; the worker picks it up when free
         with self.lock:
             self.latest_msg = msg
@@ -141,6 +168,10 @@ class SegmentationNode:
                  (xyz[:, 1] >= self.crop['y_min']) & (xyz[:, 1] <= self.crop['y_max']))
             xyz, feats = xyz[m], feats[m]
 
+        if self.robot_radius > 0:
+            far = np.einsum('ij,ij->i', xyz[:, :2], xyz[:, :2]) > self.robot_radius ** 2
+            xyz, feats = xyz[far], feats[far]
+
         # drop duplicate coordinates (degenerate for the KDTree), as legacy did
         _, uniq = np.unique(xyz, axis=0, return_index=True)
         xyz, feats = xyz[uniq], feats[uniq]
@@ -168,9 +199,10 @@ class SegmentationNode:
             return
         n = len(xyz)
         data = np.zeros(n, dtype=[('x', 'f4'), ('y', 'f4'), ('z', 'f4'),
-                                  ('intensity', 'f4'), ('label', 'u4')])
+                                  ('intensity', 'f4'), ('rgb', 'u4'), ('label', 'u4')])
         data['x'], data['y'], data['z'] = xyz[:, 0], xyz[:, 1], xyz[:, 2]
         data['intensity'] = intensity
+        data['rgb'] = _PALETTE[labels]        # same colors as /semantic/map
         data['label'] = labels
 
         out = PointCloud2()
@@ -181,11 +213,12 @@ class SegmentationNode:
             PointField(name='y', offset=4, datatype=PointField.FLOAT32, count=1),
             PointField(name='z', offset=8, datatype=PointField.FLOAT32, count=1),
             PointField(name='intensity', offset=12, datatype=PointField.FLOAT32, count=1),
-            PointField(name='label', offset=16, datatype=PointField.UINT32, count=1),
+            PointField(name='rgb', offset=16, datatype=PointField.UINT32, count=1),
+            PointField(name='label', offset=20, datatype=PointField.UINT32, count=1),
         ]
         out.is_bigendian = False
-        out.point_step = 20
-        out.row_step = 20 * n
+        out.point_step = 24
+        out.row_step = 24 * n
         out.is_dense = True
         out.data = data.tobytes()
         self.pub.publish(out)

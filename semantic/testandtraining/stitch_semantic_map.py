@@ -28,7 +28,6 @@ import os
 import sys
 
 import numpy as np
-from scipy.spatial.transform import Rotation, Slerp
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SEMANTIC_DIR = os.path.dirname(BASE_DIR)
@@ -36,38 +35,8 @@ sys.path.insert(0, os.path.join(SEMANTIC_DIR, 'include'))
 
 from config import LABEL_TO_NAME, LABEL_TO_COLOR
 from helper_ply import write_ply
-
-NUM_CLASSES = len(LABEL_TO_NAME)
-
-
-def load_poses(path):
-    data = np.genfromtxt(path, delimiter=',', names=True)
-    order = np.argsort(data['timestamp'])
-    stamps = data['timestamp'][order]
-    trans = np.stack([data['x'], data['y'], data['z']], axis=1)[order]
-    quats = np.stack([data['qx'], data['qy'], data['qz'], data['qw']], axis=1)[order]
-    return stamps, trans, Rotation.from_quat(quats)
-
-
-class PoseLookup:
-    def __init__(self, stamps, trans, rots, max_dt, max_gap):
-        self.stamps, self.trans, self.rots = stamps, trans, rots
-        self.max_dt, self.max_gap = max_dt, max_gap
-        self.slerp = Slerp(stamps, rots) if len(stamps) > 1 else None
-
-    def get(self, t):
-        """Return (R, t) at time t, or None if no trustworthy pose exists."""
-        i = int(np.argmin(np.abs(self.stamps - t)))
-        if abs(self.stamps[i] - t) <= self.max_dt:
-            return self.rots[i], self.trans[i]
-        if self.slerp is None or t < self.stamps[0] or t > self.stamps[-1]:
-            return None
-        j = int(np.searchsorted(self.stamps, t))
-        if self.stamps[j] - self.stamps[j - 1] > self.max_gap:
-            return None
-        w = (t - self.stamps[j - 1]) / (self.stamps[j] - self.stamps[j - 1])
-        trans = (1 - w) * self.trans[j - 1] + w * self.trans[j]
-        return self.slerp([t])[0], trans
+import fusion
+from fusion import NUM_CLASSES, PoseLookup, load_poses
 
 
 def main():
@@ -83,11 +52,29 @@ def main():
                     help='max keyframe gap for pose interpolation [s]')
     ap.add_argument('--min-votes', type=int, default=1,
                     help='drop voxels observed fewer than this many points')
+    ap.add_argument('--robot-radius', type=float, default=0.55,
+                    help='remove robot self-reflections: points within this '
+                         'horizontal radius of the sensor [m], 0 disables')
+    ap.add_argument('--denoise-neighbors', type=int, default=3,
+                    help='remove isolated voxels with fewer than this many '
+                         'neighbours within --denoise-radius, 0 disables')
+    ap.add_argument('--denoise-radius', type=float, default=0.35,
+                    help='neighbourhood radius for noise removal [m]')
+    ap.add_argument('--ground-voxel', type=float, default=0.3,
+                    help='re-downsample ground-class voxels to this coarser '
+                         'grid [m], 0 keeps ground at --voxel resolution')
+    ap.add_argument('--raw', action='store_true',
+                    help='raw stitching: no voxelisation and no clean-up at all '
+                         '— every labeled point transformed and concatenated '
+                         '(overrides all processing options)')
     ap.add_argument('--split-classes', action='store_true',
                     help='also write one PLY per class')
     ap.add_argument('--preview', action='store_true',
                     help='also render a top-down/elevation PNG next to the PLY')
     args = ap.parse_args()
+
+    if args.raw:
+        args.robot_radius = 0.0    # raw means raw — keep every point
 
     stamps, trans, rots = load_poses(args.poses)
     print('Loaded %d keyframe poses (%.1f s span)' % (len(stamps), stamps[-1] - stamps[0]))
@@ -99,10 +86,10 @@ def main():
     print('Found %d labeled frames' % len(files))
 
     # collect map-frame points, then fuse in one vectorised pass
-    inv_voxel = 1.0 / args.voxel
     all_pts, all_labels = [], []
     used = skipped = 0
 
+    robot_hits = 0
     for f in files:
         d = np.load(f, allow_pickle=True)
         pose = lookup.get(float(d['stamp']))
@@ -110,35 +97,40 @@ def main():
             skipped += 1
             continue
         R, t = pose
-        all_pts.append((d['xyz'].astype(np.float64) @ R.as_matrix().T + t).astype(np.float32))
-        all_labels.append(d['label'].astype(np.uint8))
+        xyz, lab, removed = fusion.remove_robot(d['xyz'], d['label'], args.robot_radius)
+        robot_hits += removed
+        all_pts.append((xyz.astype(np.float64) @ R.as_matrix().T + t).astype(np.float32))
+        all_labels.append(lab.astype(np.uint8))
         used += 1
     print('Frames used: %d, skipped (no pose): %d' % (used, skipped))
+    if robot_hits:
+        print('Removed %d robot self-reflection points (r < %.2f m)'
+              % (robot_hits, args.robot_radius))
     if not all_pts:
         sys.exit('nothing fused — check timestamps / --max-dt / --max-gap')
 
     pts = np.concatenate(all_pts)
     labels = np.concatenate(all_labels).astype(np.int64)
     del all_pts, all_labels
-    print('Fusing %d points into %.2f m voxels ...' % (len(pts), args.voxel))
 
-    # hash voxel index (21 bits per axis, origin-offset) into one int64
-    keys = np.floor(pts * inv_voxel).astype(np.int64) + (1 << 20)
-    if keys.min() < 0 or keys.max() >= (1 << 21):
-        sys.exit('map exceeds the hashable range — increase --voxel')
-    h = (keys[:, 0] << 42) | (keys[:, 1] << 21) | keys[:, 2]
+    if args.raw:
+        print('Raw stitching: %d points, no voxelisation or clean-up' % len(pts))
+        xyz, label = pts.astype(np.float32), labels.astype(np.uint8)
+    else:
+        print('Fusing %d points into %.2f m voxels ...' % (len(pts), args.voxel))
+        xyz, label = fusion.fuse(pts, labels, args.voxel, args.min_votes)
 
-    uniq, inverse, n = np.unique(h, return_inverse=True, return_counts=True)
-    nvox = len(uniq)
+        xyz, label, dropped = fusion.denoise(xyz, label, args.denoise_neighbors,
+                                             args.denoise_radius)
+        if dropped:
+            print('Noise removal: dropped %d isolated voxels (<%d neighbours in %.2f m)'
+                  % (dropped, args.denoise_neighbors, args.denoise_radius))
 
-    counts = np.zeros((nvox, NUM_CLASSES), dtype=np.int64)     # class votes
-    np.add.at(counts, (inverse, labels), 1)
-    sums = np.zeros((nvox, 3), dtype=np.float64)               # centroids
-    np.add.at(sums, inverse, pts)
-
-    keep = n >= args.min_votes
-    label = np.argmax(counts[keep], axis=1).astype(np.uint8)   # majority vote
-    xyz = (sums[keep] / n[keep, None]).astype(np.float32)
+        n_before = len(xyz)
+        xyz, label = fusion.downsample_ground(xyz, label, args.ground_voxel, args.voxel)
+        if len(xyz) != n_before:
+            print('Ground downsample: %d -> %d voxels (%.2f m grid)'
+                  % (n_before, len(xyz), args.ground_voxel))
 
     palette = np.array([LABEL_TO_COLOR[i] for i in range(NUM_CLASSES)], dtype=np.uint8)
     rgb = palette[label]
@@ -146,7 +138,10 @@ def main():
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
     write_ply(args.out, [xyz, rgb[:, 0], rgb[:, 1], rgb[:, 2], label],
               ['x', 'y', 'z', 'red', 'green', 'blue', 'label'])
-    print('Wrote %s (%d voxels @ %.2f m)' % (args.out, len(xyz), args.voxel))
+    if args.raw:
+        print('Wrote %s (%d raw points)' % (args.out, len(xyz)))
+    else:
+        print('Wrote %s (%d voxels @ %.2f m)' % (args.out, len(xyz), args.voxel))
 
     for i in range(NUM_CLASSES):
         print('  %-8s %8d voxels' % (LABEL_TO_NAME[i], int(np.sum(label == i))))
