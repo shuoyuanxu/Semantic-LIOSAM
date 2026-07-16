@@ -1,0 +1,35 @@
+<launch>
+
+    <arg name="project" default="lio_sam"/>
+    <arg name="use_gps" default="true"/>
+    <arg name="rate" default="0.5"/>
+    <arg name="bag_in"/>
+    <arg name="bag_out"/>
+
+    <param name="/use_sim_time" value="true"/>
+
+    <!-- Parameters -->
+    <rosparam file="$(find lio_sam)/config/params.yml" command="load" />
+
+    <!--- LOAM -->
+    <include file="$(find lio_sam)/launch/include/module_loam.launch" />
+
+    <!--- Robot State TF -->
+    <include file="$(find lio_sam)/launch/include/module_robot_state_publisher.launch" />
+
+    <!--- Run Navsat (feeds the GPS factor) -->
+    <include file="$(find lio_sam)/launch/include/module_navsat.launch" if="$(arg use_gps)"/>
+
+    <node pkg="rosbag" type="play" name="BagPlay" output="screen" required="true"
+          args="--clock -r $(arg rate) -s 0 $(arg bag_in)"/>
+
+    <node name="record_bag" pkg="rosbag" type="record" output="screen"
+          args="-O $(arg bag_out)
+                /forwardLeft/tag_detections
+                /forwardRight/tag_detections
+                /left/tag_detections
+                /right/tag_detections
+                /lio_sam/mapping/odometry
+                /tf_static"/>
+
+</launch>

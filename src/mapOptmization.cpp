@@ -357,6 +357,37 @@ public:
 
 
 
+    // rewrite keyframes/poses.csv with the current (optimized) keyframe poses.
+    // Called on every new keyframe and after loop closures, so the file on disk
+    // is always up to date and no save_map call is needed to obtain the poses.
+    // Written to a tmp file first so readers never see a half-written csv.
+    void writePosesCsv()
+    {
+        if (kfSaveDir.empty() || cloudKeyPoses6D->empty())
+            return;
+        std::string tmpFile = kfSaveDir + "poses.csv.tmp";
+        std::ofstream posesFile(tmpFile);
+        if (!posesFile.is_open())
+            return;
+        posesFile << "id,x,y,z,qx,qy,qz,qw,timestamp\n";
+        for (int i = 0; i < (int)cloudKeyPoses6D->size(); i++)
+        {
+            const auto& p = cloudKeyPoses6D->points[i];
+            Eigen::AngleAxisd roll_aa (p.roll,  Eigen::Vector3d::UnitX());
+            Eigen::AngleAxisd pitch_aa(p.pitch, Eigen::Vector3d::UnitY());
+            Eigen::AngleAxisd yaw_aa  (p.yaw,   Eigen::Vector3d::UnitZ());
+            Eigen::Quaterniond q = yaw_aa * pitch_aa * roll_aa;
+            posesFile << std::fixed << std::setprecision(6)
+                      << i << ","
+                      << p.x << "," << p.y << "," << p.z << ","
+                      << q.x() << "," << q.y() << "," << q.z() << "," << q.w() << ","
+                      << p.time << "\n";
+        }
+        posesFile.close();
+        int unused = system(("mv -f " + tmpFile + " " + kfSaveDir + "poses.csv").c_str());
+        (void)unused;
+    }
+
     bool saveMapService(lio_sam::save_mapRequest& req, lio_sam::save_mapResponse& res)
     {
       string saveMapDirectory;
@@ -370,22 +401,7 @@ public:
       int unused = system(("find " + saveMapDirectory + " -maxdepth 1 -type f -delete 2>/dev/null; mkdir -p " + saveMapDirectory + "; mkdir -p " + kfSaveDir).c_str());
 
       // write poses.csv first — it's fast and must survive any subsequent timeout
-      std::ofstream posesFile(kfSaveDir + "poses.csv");
-      posesFile << "id,x,y,z,qx,qy,qz,qw,timestamp\n";
-      for (int i = 0; i < (int)cloudKeyPoses6D->size(); i++)
-      {
-          const auto& p = cloudKeyPoses6D->points[i];
-          Eigen::AngleAxisd roll_aa (p.roll,  Eigen::Vector3d::UnitX());
-          Eigen::AngleAxisd pitch_aa(p.pitch, Eigen::Vector3d::UnitY());
-          Eigen::AngleAxisd yaw_aa  (p.yaw,   Eigen::Vector3d::UnitZ());
-          Eigen::Quaterniond q = yaw_aa * pitch_aa * roll_aa;
-          posesFile << std::fixed << std::setprecision(6)
-                    << i << ","
-                    << p.x << "," << p.y << "," << p.z << ","
-                    << q.x() << "," << q.y() << "," << q.z() << "," << q.w() << ","
-                    << p.time << "\n";
-      }
-      posesFile.close();
+      writePosesCsv();
       cout << "Keyframe poses saved to " << kfSaveDir << "poses.csv (" << cloudKeyPoses6D->size() << " poses)" << endl;
 
       // save key frame transformations
@@ -1595,6 +1611,9 @@ public:
 
         // save path for visualization
         updatePath(thisPose6D);
+
+        // keep poses.csv on disk current with every new keyframe
+        writePosesCsv();
     }
 
     void correctPoses()
@@ -1627,6 +1646,9 @@ public:
             }
 
             aLoopIsClosed = false;
+
+            // poses changed retroactively — refresh poses.csv
+            writePosesCsv();
         }
     }
 

@@ -2,6 +2,9 @@
 
     <arg name="project" default="lio_sam"/>
     <arg name="use_gps" default="true"/>
+    <!-- semantic segmentation alongside LIO-SAM (needs PyTorch); off by default
+         so the normal SLAM stack is unaffected. Enable with use_semantic:=true -->
+    <arg name="use_semantic" default="false"/>
 
     <!-- Parameters -->
     <rosparam file="$(find lio_sam)/config/params.yml" command="load" />
@@ -14,6 +17,9 @@
 
     <!--- Run Navsat (feeds the GPS factor) -->
     <include file="$(find lio_sam)/launch/include/module_navsat.launch" if="$(arg use_gps)"/>
+
+    <!--- Semantic segmentation (publishes /semantic/labeled_cloud for RViz) -->
+    <include file="$(find lio_sam)/launch/include/module_semantic.launch" if="$(arg use_semantic)"/>
 
     <!--- Run Rviz-->
     <include file="$(find lio_sam)/launch/include/module_rviz.launch" />

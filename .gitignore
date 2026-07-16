@@ -1,0 +1,38 @@
+# ---- semantic segmentation: data, models, outputs (large binaries stay out of git) ----
+# keep the deployed model and the raw labeled dataset in git;
+# training runs and regenerable prepared data stay out
+semantic/model/*
+!semantic/model/checkpoint.tar
+semantic/data/prepared/
+
+# model / dataset binaries anywhere in the repo
+*.pt
+*.pth
+*.ckpt
+
+# point cloud dumps
+*.pcd
+*.npz
+*.bin
+
+# python
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
+*.so
+*.o
+
+# compiled-op build trees inside include/utils
+semantic/include/utils/**/build/
+semantic/include/utils/nearest_neighbors/lib/
+
+# catkin / ros artifacts
+devel/
+logs/
+*.bag
+
+# editors
+.idea/
+.vscode/

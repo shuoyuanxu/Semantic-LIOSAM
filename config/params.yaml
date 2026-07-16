@@ -178,3 +178,33 @@ ekf_gps:
                                0,    0,    0,    0,    0,    0,    0,     0,     0,     0,    0,    0,    0.01, 0,      0,
                                0,    0,    0,    0,    0,    0,    0,     0,     0,     0,    0,    0,    0,    0.01,   0,
                                0,    0,    0,    0,    0,    0,    0,     0,     0,     0,    0,    0,    0,    0,      0.015]
+
+
+# Semantic segmentation & map generation (used when run.launch use_semantic:=true)
+semantic:
+  # --- segmentation node ---
+  input_topic: "/ouster/points"
+  output_topic: "/semantic/labeled_cloud"
+  min_interval: 0.5            # seconds between labeled scans (segmentation is slower than the sensor)
+  use_crop: true               # keep the near-field crop the model was trained on
+  robot_radius: 0.55           # m, remove robot self-reflections around the sensor (0 = off)
+  device: ""                   # "" = auto (cuda if available), or "cuda:0" / "cpu"
+
+  # --- final semantic map (auto-generated when the run ends) ---
+  auto_stitch: true
+  idle_timeout: 15.0           # s of lidar silence that counts as end-of-run
+  raw_stitch: false            # true = raw stitching: no voxelisation and no
+                               # clean-up at all, every labeled point kept
+                               # (ignores map_voxel/ground_voxel/denoise/min_votes;
+                               # set robot_radius: 0 too if you want reflections kept)
+  map_voxel: 0.10              # m, fusion voxel size of the final map
+  ground_voxel: 0.3            # m, coarser re-grid of the ground class (0 = keep map_voxel)
+  denoise_neighbors: 3         # drop voxels with fewer neighbours than this (0 = off)
+  denoise_radius: 0.35         # m, neighbourhood radius for noise removal
+  min_votes: 1                 # drop voxels observed by fewer points than this
+  split_classes: true          # also write one PLY per class
+  preview: true                # also render the top-down/elevation PNG
+
+  # --- live clean map in rviz (/semantic/map) ---
+  live_interval: 15.0          # s between live map refreshes (0 = off)
+  live_voxel: 0.15             # m, voxel size of the live map
