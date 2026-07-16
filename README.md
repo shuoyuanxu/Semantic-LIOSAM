@@ -1,5 +1,5 @@
 # Semantic LIO-SAM — forestry / orchard semantic mapping
-file:///home/shu/Downloads/LOAM/semantic/semantic_map_preview.png![Uploading image.png…]()
+<img width="1760" height="1540" alt="image" src="https://github.com/user-attachments/assets/aa007832-f5da-4c12-a640-04b2523cca3b" />
 
 LiDAR-inertial SLAM with an integrated semantic segmentation pipeline that
 produces class-labeled 3D maps of orchard / forestry environments
