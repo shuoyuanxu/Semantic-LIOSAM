@@ -12,7 +12,7 @@
     <!-- Navsat -->
     <node pkg="robot_localization" type="navsat_transform_node" name="navsat" respawn="true">
         <remap from="/imu/data" to="/ms/imu/data" />
-        <remap from="/gps/fix" to="/antobot_gps" />
+        <remap from="/gps/fix" to="/ublox_position_receiver/fix" />
         <remap from="/odometry/filtered" to="odometry/navsat" />
     </node>
 
