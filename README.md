@@ -1,4 +1,4 @@
-# Semantic LIO-SAM — forestry semantic mapping
+# Semantic LIO-SAM — orchard semantic mapping
 <img width="1600" height="1248" alt="raw_vs_semantic" src="https://github.com/user-attachments/assets/fe6d7fab-84dc-4aff-8b8e-abd370ce984e" />
 <img width="640" height="360" alt="semantic_map_buildup" src="https://github.com/user-attachments/assets/6f3f028a-fc16-4e2f-af3f-9f25686c8e52" />
 <img width="640" height="360" alt="semantic_flythrough" src="https://github.com/user-attachments/assets/abe0c676-fdb4-4558-a684-036b22e9d8ef" />
