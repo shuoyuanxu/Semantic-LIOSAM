@@ -7,7 +7,7 @@ LiDAR-inertial SLAM with an integrated semantic segmentation pipeline that
 produces class-labeled 3D maps of orchard environments
 (classes: `trunk`, `crown`, `ground`, `others`).
 
-## What this fork adds
+## Functionalities
 
 - **`semantic/` module** — a RandLA-Net segmentation node that labels raw
   Ouster scans alongside LIO-SAM and automatic final map generation when a run ends
